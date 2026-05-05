@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#020608" />
+    <meta name="description" content="NeuroSecure Pipeline — Privacy-Preserving Brain-Computer Interface Attack Detection System" />
+
+    <!-- Favicon: inline SVG as data URI — brain + shield icon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%23020608'/><text y='46' x='8' font-size='44'>🧠</text></svg>" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%23020608'/><text y='46' x='8' font-size='44'>🧠</text></svg>" />
+
+    <!-- IBM Plex Mono + Orbitron — matches the dashboard aesthetic -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Orbitron:wght@700;900&display=swap"
+      rel="stylesheet"
+    />
+
+    <title>NeuroSecure Pipeline</title>
+
+    <style>
+      /* Hard reset — the dashboard owns 100% of the viewport */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        background: #020608;
+        color: #c8e8f0;
+        font-family: 'IBM Plex Mono', 'Courier New', monospace;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow: hidden; /* dashboard handles its own scroll */
+      }
+
+      /* Loading screen — shown until React hydrates */
+      #loading-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: #020608;
+        z-index: 9999;
+        transition: opacity 0.4s ease;
+      }
+
+      #loading-screen.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .ns-logo {
+        font-family: 'Orbitron', monospace;
+        font-size: 28px;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+        color: #00e5ff;
+      }
+
+      .ns-logo span {
+        color: #00ff88;
+      }
+
+      .ns-tagline {
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #3a6070;
+      }
+
+      /* Animated pulse bar */
+      .ns-bar-track {
+        width: 220px;
+        height: 3px;
+        background: #0e2030;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .ns-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00e5ff, #00ff88);
+        border-radius: 2px;
+        animation: loadBar 1.6s ease-in-out infinite;
+      }
+
+      @keyframes loadBar {
+        0%   { width: 0%;   transform: translateX(0); }
+        50%  { width: 60%;  }
+        100% { width: 100%; transform: translateX(110%); }
+      }
+
+      /* Scrollbar theming (dashboard content area uses overflow-y: auto) */
+      ::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #020608;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1a3040;
+        border-radius: 2px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #3a6070;
+      }
+
+      /* Selection color */
+      ::selection {
+        background: #00e5ff30;
+        color: #00e5ff;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Loading screen (hidden once React mounts) -->
+    <div id="loading-screen">
+      <div class="ns-logo">NEURO<span>SECURE</span></div>
+      <div class="ns-tagline">Initializing detection pipeline…</div>
+      <div class="ns-bar-track">
+        <div class="ns-bar-fill"></div>
+      </div>
+    </div>
+
+    <!-- React mounts here -->
+    <div id="root"></div>
+
+    <script>
+      // Hide loading screen once React has painted its first frame
+      window.__nsHideLoader = function () {
+        var el = document.getElementById('loading-screen');
+        if (el) {
+          el.classList.add('hidden');
+          setTimeout(function () { el.remove(); }, 500);
+        }
+      };
+    </script>
+
+    <noscript>
+      <div style="
+        display: flex; align-items: center; justify-content: center;
+        height: 100vh; background: #020608;
+        font-family: monospace; color: #3a6070; font-size: 14px;
+        text-align: center; padding: 40px;
+      ">
+        NeuroSecure Pipeline requires JavaScript to run.<br/>
+        Please enable JavaScript in your browser.
+      </div>
+    </noscript>
+  </body>
+</html>

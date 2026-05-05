@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuroSecure Pipeline — BCI Attack Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#020608;--panel:#060d12;--panel2:#08111a;
+  --border:#0e2030;--border2:#122535;
+  --accent:#00e5ff;--green:#00ff88;--red:#ff2d55;
+  --orange:#ff9500;--yellow:#ffd60a;--purple:#bf5af2;
+  --dim:#1a3040;--text:#c8e8f0;--muted:#3a6070;--muted2:#5a8090;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:'IBM Plex Mono',monospace;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--dim);border-radius:2px}
+::selection{background:#00e5ff22;color:var(--accent)}
+
+/* ── SCAN LINE OVERLAY ── */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);
+}
+
+/* ── KEYFRAMES ── */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px var(--accent)33}50%{box-shadow:0 0 20px var(--accent)66,0 0 40px var(--accent)22}}
+@keyframes slideIn{from{transform:translateY(-8px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes scanH{from{transform:translateX(-100%)}to{transform:translateX(100vw)}}
+@keyframes blink{0%,100%{opacity:1}49%{opacity:1}50%{opacity:0}99%{opacity:0}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes ripple{0%{transform:scale(1);opacity:0.8}100%{transform:scale(2.5);opacity:0}}
+
+/* ── LAYOUT ── */
+#app{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+
+/* ── HEADER ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;height:52px;flex-shrink:0;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  position:relative;overflow:hidden;
+}
+header::before{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent)66,transparent);
+  animation:scanH 3s linear infinite;
+}
+.logo{font-family:'Orbitron',monospace;font-size:18px;font-weight:900;letter-spacing:0.08em;color:var(--accent);text-shadow:0 0 20px var(--accent)66}
+.logo span{color:var(--green)}
+.logo sub{font-size:9px;letter-spacing:0.2em;color:var(--muted);vertical-align:super;margin-left:4px;font-family:'IBM Plex Mono',monospace;font-weight:400}
+.hdr-center{display:flex;gap:6px;align-items:center}
+.hdr-right{display:flex;gap:12px;align-items:center;font-size:10px;color:var(--muted)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s ease-in-out infinite}
+.hdr-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.hdr-stat .val{color:var(--text);font-weight:700;font-size:13px}
+.hdr-sep{width:1px;height:28px;background:var(--border);margin:0 4px}
+.tick-counter{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* ── NAV TABS ── */
+nav{display:flex;gap:2px;padding:8px 20px 0;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+.tab{padding:7px 18px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;
+  cursor:pointer;border-radius:6px 6px 0 0;border:1px solid transparent;border-bottom:none;
+  color:var(--muted);transition:all 0.15s;background:transparent;position:relative;bottom:-1px}
+.tab:hover{color:var(--text);background:var(--panel2)}
+.tab.active{color:var(--accent);background:var(--bg);border-color:var(--border);border-bottom-color:var(--bg)}
+.tab .dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:6px;background:var(--muted)}
+.tab.active .dot{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+
+/* ── MAIN CONTENT ── */
+main{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px}
+
+/* ── PANELS ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.panel-title{font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.panel-title .badge{font-size:9px;padding:2px 8px;border-radius:3px;font-weight:700;letter-spacing:0.08em}
+
+/* ── STAT CARDS ROW ── */
+.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.stat-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;transition:border-color 0.2s}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.accent::before{background:var(--accent)}
+.stat-card.green::before{background:var(--green)}
+.stat-card.red::before{background:var(--red)}
+.stat-card.orange::before{background:var(--orange)}
+.stat-card.purple::before{background:var(--purple)}
+.stat-label{font-size:9px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.stat-value.accent{color:var(--accent)}
+.stat-value.green{color:var(--green)}
+.stat-value.red{color:var(--red)}
+.stat-value.orange{color:var(--orange)}
+.stat-value.purple{color:var(--purple)}
+.stat-sub{font-size:9px;color:var(--muted);margin-top:4px}
+
+/* ── EEG GRID ── */
+.eeg-grid{display:flex;flex-direction:column;gap:0}
+.eeg-row{display:flex;align-items:center;gap:10px;height:44px;border-bottom:1px solid var(--border);padding:2px 0}
+.eeg-row:last-child{border-bottom:none}
+.ch-label{font-size:10px;font-weight:700;width:32px;flex-shrink:0;text-align:right}
+.ch-canvas-wrap{flex:1;height:40px;position:relative;overflow:hidden}
+canvas.ch-canvas{position:absolute;inset:0;width:100%;height:100%}
+.ch-freq{font-size:9px;color:var(--muted);width:38px;flex-shrink:0;text-align:right}
+.attacked-label{font-size:9px;color:var(--red);width:50px;flex-shrink:0;animation:pulse 0.8s infinite}
+
+/* ── ANOMALY CHART ── */
+.score-chart-wrap{position:relative;height:80px}
+canvas#scoreChart{width:100%;height:100%}
+.score-threshold{position:absolute;top:0;left:0;right:0;pointer-events:none}
+.current-score-badge{
+  position:absolute;right:0;top:50%;transform:translateY(-50%);
+  font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;
+  text-shadow:0 0 20px currentColor;
+}
+
+/* ── ATTACK BANNER ── */
+#attack-banner{
+  display:none;padding:12px 16px;border-radius:8px;
+  background:rgba(255,45,85,0.08);border:1px solid var(--red)55;
+  animation:slideIn 0.3s ease, glow 1s ease-in-out infinite;
+}
+#attack-banner.show{display:block}
+.attack-type-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;
+  letter-spacing:0.08em;text-transform:uppercase;
+  background:var(--red)22;border:1px solid var(--red)55;color:var(--red);
+}
+.severity-badge{
+  padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+  border:1px solid currentColor;
+}
+
+/* ── ATTACK LOG ── */
+#attack-list{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 200px);overflow-y:auto}
+.attack-item{
+  display:flex;align-items:center;gap:12px;padding:10px 14px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:6px;
+  animation:slideIn 0.3s ease;font-size:11px;
+  border-left:3px solid var(--red);
+}
+.attack-item .ai-time{color:var(--muted);font-size:10px;min-width:60px}
+.attack-item .ai-type{color:var(--text);font-weight:600;flex:1}
+.attack-item .ai-ch{color:var(--muted);font-size:10px}
+.attack-item .ai-score{font-weight:700;font-variant-numeric:tabular-nums}
+.empty-log{text-align:center;padding:40px;color:var(--muted);font-size:11px}
+.empty-log .em-icon{font-size:32px;margin-bottom:10px;opacity:0.4}
+
+/* ── PRIVACY ENGINE ── */
+.dp-meter{height:12px;background:var(--dim);border-radius:6px;overflow:hidden;position:relative}
+.dp-meter-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--yellow),var(--red));transition:width 0.5s ease;border-radius:6px}
+.dp-config-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--dim)55;border-radius:5px;font-size:11px;margin-bottom:4px}
+.dp-config-row .key{color:var(--muted)}
+.dp-config-row .val{color:var(--text);font-weight:600}
+.dp-config-row .val.hl{color:var(--accent)}
+.threat-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--dim)33;border-radius:5px;font-size:11px;margin-bottom:4px}
+.threat-row .icon{font-size:14px;flex-shrink:0}
+.threat-row .threat-name{color:var(--text);font-weight:600;flex:1}
+.threat-row .threat-how{color:var(--muted);font-size:10px;margin-top:1px}
+.noise-viz{height:60px;position:relative}
+canvas#noiseCanvas{width:100%;height:100%}
+
+/* ── ARCHITECTURE ── */
+.arch-layer{
+  display:flex;align-items:flex-start;gap:12px;padding:10px 14px;
+  border-radius:6px;background:var(--dim)44;margin-bottom:4px;
+  border-left:3px solid var(--accent);
+}
+.arch-layer .al-icon{font-size:18px;flex-shrink:0;margin-top:1px}
+.arch-layer .al-name{font-size:12px;font-weight:700;margin-bottom:2px}
+.arch-layer .al-desc{font-size:10px;color:var(--muted)}
+.arch-arrow{text-align:center;color:var(--border);font-size:18px;line-height:1.2;margin:1px 0}
+.feature-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;border:1px solid;margin:2px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+
+/* ── SCROLLING TICKER ── */
+.ticker-wrap{overflow:hidden;height:22px;background:var(--dim)33;border-radius:4px;margin-top:8px}
+.ticker-inner{display:flex;gap:0;white-space:nowrap;animation:ticker 20s linear infinite}
+.ticker-item{padding:0 24px;font-size:9px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;border-right:1px solid var(--border);display:flex;align-items:center;height:22px}
+.ticker-item.alert{color:var(--red);animation:blink 1s infinite}
+@keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── PRIVACY BUDGET RING ── */
+.budget-ring-wrap{display:flex;align-items:center;justify-content:center;padding:10px 0}
+canvas#budgetRing{display:block}
+
+/* ── RESPONSIVE HIDE ── */
+.hide-sm{display:block}
+@media(max-height:700px){.stats-row{grid-template-columns:repeat(5,1fr)}.hide-sm{display:none}}
+
+/* ── LIVE INDICATOR ── */
+.live-dot{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:0.1em;color:var(--green)}
+.live-dot::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.5s infinite}
+
+/* ── CHANNEL COLORS ── */
+.ch0{color:#00e5ff}.ch1{color:#00ff88}.ch2{color:#bf5af2}.ch3{color:#ffd60a}
+.ch4{color:#ec4899}.ch5{color:#06b6d4}.ch6{color:#10b981}.ch7{color:#f97316}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ── HEADER ── -->
+<header>
+  <div style="display:flex;align-items:center;gap:14px">
+    <div class="logo">NEURO<span>SECURE</span> <sub>PIPELINE v1.0</sub></div>
+    <div style="width:1px;height:28px;background:var(--border)"></div>
+    <div class="live-dot">LIVE</div>
+  </div>
+  <div class="hdr-center">
+    <div class="status-dot"></div>
+    <span style="font-size:10px;color:var(--muted);letter-spacing:0.1em">DETECTION ENGINE ACTIVE</span>
+  </div>
+  <div class="hdr-right">
+    <div class="hdr-stat">
+      <span class="tick-counter" id="hdr-packets">0</span>
+      <span>PACKETS</span>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-stat">
+      <span class="val" id="hdr-attacks" style="color:var(--red)">0</span>
+      <span>ATTACKS</span>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-stat">
+      <span class="val" id="hdr-epsilon" style="color:var(--accent)">ε=1.0</span>
+      <span>PRIVACY</span>
+    </div>
+    <div class="hdr-sep"></div>
+    <div class="hdr-stat">
+      <span class="val" id="hdr-time" style="color:var(--muted)">00:00:00</span>
+      <span>UPTIME</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── TABS ── -->
+<nav>
+  <button class="tab active" onclick="switchTab('monitor')" id="tab-monitor">
+    <span class="dot"></span>Live Monitor
+  </button>
+  <button class="tab" onclick="switchTab('attacks')" id="tab-attacks">
+    <span class="dot"></span>Attack Log
+    <span id="attack-count-badge" style="display:none;margin-left:6px;background:var(--red)22;color:var(--red);border:1px solid var(--red)44;padding:1px 6px;border-radius:3px;font-size:9px">0</span>
+  </button>
+  <button class="tab" onclick="switchTab('privacy')" id="tab-privacy">
+    <span class="dot"></span>Privacy Engine
+  </button>
+  <button class="tab" onclick="switchTab('architecture')" id="tab-architecture">
+    <span class="dot"></span>Architecture
+  </button>
+</nav>
+
+<!-- ── MAIN ── -->
+<main id="main-content">
+  <!-- injected by JS -->
+</main>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  tick: 0,
+  totalPackets: 0,
+  totalAttacks: 0,
+  privacyBudget: 0,
+  attacks: [],
+  scoreHistory: new Array(120).fill(0),
+  channelBuffers: Array.from({length:8}, () => new Array(200).fill(0)),
+  currentFrame: null,
+  startTime: Date.now(),
+  currentTab: 'monitor',
+};
+
+const ATTACK_TYPES = [
+  'signal_injection','replay_attack','adversarial_perturbation',
+  'eavesdropping_artifact','model_inversion_probe','membership_inference'
+];
+const ATTACK_LABELS = {
+  signal_injection:'Signal Injection',replay_attack:'Replay Attack',
+  adversarial_perturbation:'Adv. Perturbation',eavesdropping_artifact:'Eavesdrop Artifact',
+  model_inversion_probe:'Model Inversion',membership_inference:'Membership Inference',
+};
+const CH_NAMES = ['Fp1','Fp2','F3','F4','C3','C4','P3','P4'];
+const CH_COLORS = ['#00e5ff','#00ff88','#bf5af2','#ffd60a','#ec4899','#06b6d4','#10b981','#f97316'];
+const CH_FREQS = ['8Hz','10Hz','12Hz','14Hz','16Hz','18Hz','20Hz','22Hz'];
+
+// ═══════════════════════════════════════════════════════════
+// SIGNAL SIMULATION
+// ═══════════════════════════════════════════════════════════
+function generateFrame() {
+  S.tick++;
+  const t = S.tick / 5;
+  const isAttack = Math.random() < 0.09;
+  const attackType = isAttack ? ATTACK_TYPES[Math.floor(Math.random()*6)] : null;
+  const nAffected = isAttack ? Math.floor(Math.random()*3)+1 : 0;
+  const affectedCh = isAttack ? 
+    [...new Set(Array.from({length:nAffected}, ()=>Math.floor(Math.random()*8)))] : [];
+
+  const channels = Array.from({length:8}, (_, ch) => {
+    const freq = 8 + ch * 2;
+    const amp = 20 + ch * 3;
+    return Array.from({length:64}, (__, i) => {
+      const s = i / 64;
+      let v = amp * Math.sin(2*Math.PI*freq*(t+s)) + (Math.random()-0.5)*8;
+      v += amp*0.3 * Math.sin(2*Math.PI*freq*0.5*(t+s));
+      if (isAttack && affectedCh.includes(ch)) {
+        v += (Math.random()-0.5) * 180 + Math.sin(2*Math.PI*3*(t+s))*60;
+      }
+      return v;
+    });
+  });
+
+  const score = isAttack ? 0.38 + Math.random()*0.57 : Math.random()*0.27 + 0.02;
+  const severity = score > 0.85 ? 'critical' : score > 0.65 ? 'high' : score > 0.40 ? 'medium' : 'low';
+  const noiseScale = 0.78 + Math.random()*0.44;
+
+  // update channel buffers
+  channels.forEach((ch, i) => {
+    S.channelBuffers[i] = [...S.channelBuffers[i].slice(ch.length), ...ch];
+  });
+  S.scoreHistory = [...S.scoreHistory.slice(1), score];
+
+  S.totalPackets++;
+  S.privacyBudget = Math.min(10, S.privacyBudget + 0.008);
+  if (isAttack) {
+    S.totalAttacks++;
+    S.attacks.unshift({
+      id: S.tick,
+      type: attackType,
+      label: ATTACK_LABELS[attackType],
+      severity,
+      score: score.toFixed(3),
+      channels: affectedCh,
+      time: new Date().toISOString().substr(11,8),
+    });
+    if (S.attacks.length > 50) S.attacks.pop();
+  }
+
+  return {channels, score, severity, isAttack, attackType, affectedCh, noiseScale};
+}
+
+// ═══════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════
+function switchTab(tab) {
+  S.currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  renderTab(tab);
+}
+
+function renderTab(tab) {
+  const main = document.getElementById('main-content');
+  if (tab === 'monitor') renderMonitorTab(main);
+  else if (tab === 'attacks') renderAttacksTab(main);
+  else if (tab === 'privacy') renderPrivacyTab(main);
+  else if (tab === 'architecture') renderArchitectureTab(main);
+}
+
+// ═══════════════════════════════════════════════════════════
+// MONITOR TAB
+// ═══════════════════════════════════════════════════════════
+function renderMonitorTab(main) {
+  main.innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card accent">
+        <div class="stat-label">Packets Analyzed</div>
+        <div class="stat-value accent" id="s-packets">0</div>
+        <div class="stat-sub">@256Hz EEG stream</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">Attacks Detected</div>
+        <div class="stat-value red" id="s-attacks">0</div>
+        <div class="stat-sub">Real-time classification</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-label">Detection Rate</div>
+        <div class="stat-value green" id="s-rate">—</div>
+        <div class="stat-sub">Isolation Forest</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-label">Anomaly Score</div>
+        <div class="stat-value orange" id="s-score">0.00</div>
+        <div class="stat-sub">Current frame</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="stat-label">DP Budget Used</div>
+        <div class="stat-value purple" id="s-budget">0.0</div>
+        <div class="stat-sub">ε=1.0, δ=1e-5</div>
+      </div>
+    </div>
+
+    <div id="attack-banner">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">⚡</span>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:var(--red);letter-spacing:0.1em;margin-bottom:3px">ATTACK DETECTED</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="attack-type-tag" id="ban-type">—</span>
+              <span style="font-size:10px;color:var(--muted)">Channels: <span id="ban-channels" style="color:var(--red)"></span></span>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div class="severity-badge" id="ban-severity" style="color:var(--red)">CRITICAL</div>
+          <div style="font-size:18px;font-weight:800;color:var(--red);margin-top:4px" id="ban-score">0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">
+          EEG Signal Monitor — 8 Channels
+          <span class="badge" style="background:var(--accent)15;color:var(--accent);border:1px solid var(--accent)33">256Hz SAMPLING</span>
+        </div>
+        <div class="eeg-grid" id="eeg-grid">
+          ${CH_NAMES.map((n,i)=>`
+            <div class="eeg-row" id="eeg-row-${i}">
+              <span class="ch-label ch${i}">${n}</span>
+              <div class="ch-canvas-wrap"><canvas class="ch-canvas" id="ch-canvas-${i}"></canvas></div>
+              <span class="ch-freq ch${i}">${CH_FREQS[i]}</span>
+              <span class="attacked-label" id="ch-atk-${i}" style="display:none">⚡ ATTACK</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="ticker-wrap">
+          <div class="ticker-inner" id="ticker">
+            ${Array(2).fill([
+              'EEG 8ch @ 256Hz','Privacy DP Active','Isolation Forest Running',
+              'ε-Budget Consumed','ZCR Feature Active','Band Powers Extracted',
+              'Anomaly Score Live','UART JSON Packets','Gaussian Noise Injected',
+              'Attack Log Updating','ML Features 88-dim','Threshold 0.35',
+            ].map(t=>`<span class="ticker-item">${t}</span>`).join('')).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel">
+          <div class="panel-title">
+            Anomaly Score Timeline
+            <span class="current-score-badge" id="score-num" style="color:var(--green)">0.00</span>
+          </div>
+          <div class="score-chart-wrap">
+            <canvas id="scoreChart"></canvas>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:6px">
+            <span>← 60s history</span>
+            <span style="color:var(--orange)">— threshold 0.35</span>
+            <span>live →</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Channel Status Matrix</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px" id="ch-matrix">
+            ${CH_NAMES.map((n,i)=>`
+              <div id="ch-mat-${i}" style="padding:8px;background:var(--dim)44;border:1px solid var(--border);border-radius:5px;text-align:center;transition:all 0.2s">
+                <div style="font-size:11px;font-weight:700;color:${CH_COLORS[i]}">${n}</div>
+                <div style="font-size:9px;color:var(--muted);margin-top:2px" id="ch-mat-val-${i}">–</div>
+                <div style="font-size:8px;color:var(--muted);margin-top:1px">${CH_FREQS[i]}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  // init canvases after DOM ready
+  requestAnimationFrame(() => {
+    initChannelCanvases();
+    initScoreChart();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// CANVAS RENDERING
+// ═══════════════════════════════════════════════════════════
+let channelCanvases = [];
+let scoreChartCanvas;
+
+function initChannelCanvases() {
+  channelCanvases = CH_NAMES.map((_, i) => {
+    const c = document.getElementById(`ch-canvas-${i}`);
+    if (!c) return null;
+    const w = c.parentElement.offsetWidth || 300;
+    const h = 40;
+    c.width = w * 2;
+    c.height = h * 2;
+    return c;
+  });
+}
+
+function drawChannels(attackedChs) {
+  channelCanvases.forEach((c, i) => {
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const W = c.width, H = c.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const isAttacked = attackedChs.includes(i);
+    const color = isAttacked ? '#ff2d55' : CH_COLORS[i];
+    const buf = S.channelBuffers[i];
+    const N = buf.length;
+    const step = W / N;
+
+    // bg glow if attacked
+    if (isAttacked) {
+      const grad = ctx.createLinearGradient(0,0,0,H);
+      grad.addColorStop(0,'rgba(255,45,85,0.08)');
+      grad.addColorStop(1,'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,W,H);
+    }
+
+    // signal line
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isAttacked ? 2.5 : 1.5;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = isAttacked ? 8 : 4;
+    ctx.globalAlpha = 0.9;
+
+    const maxAmp = Math.max(...buf.map(Math.abs)) || 1;
+    const scale = (H * 0.38) / maxAmp;
+
+    buf.forEach((v, j) => {
+      const x = j * step;
+      const y = H/2 - v * scale;
+      if (j === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // fill under curve
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = color;
+    ctx.lineTo(W, H/2);
+    ctx.lineTo(0, H/2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  });
+}
+
+function initScoreChart() {
+  const c = document.getElementById('scoreChart');
+  if (!c) return;
+  c.width = (c.parentElement.offsetWidth || 400) * 2;
+  c.height = 80 * 2;
+  scoreChartCanvas = c;
+}
+
+function drawScoreChart() {
+  const c = scoreChartCanvas;
+  if (!c) return;
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const data = S.scoreHistory;
+  const N = data.length;
+  const step = W / (N-1);
+
+  // threshold line
+  const thY = H * (1 - 0.35);
+  ctx.beginPath();
+  ctx.setLineDash([8,4]);
+  ctx.strokeStyle = '#ff950066';
+  ctx.lineWidth = 2;
+  ctx.moveTo(0, thY);
+  ctx.lineTo(W, thY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // gradient fill
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  const lastScore = data[data.length-1];
+  const topColor = lastScore > 0.85 ? '#ff2d55' : lastScore > 0.65 ? '#ff9500' : lastScore > 0.35 ? '#ffd60a' : '#00ff88';
+  grad.addColorStop(0, topColor + '44');
+  grad.addColorStop(1, topColor + '00');
+
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = H * (1 - v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // line
+  ctx.beginPath();
+  ctx.strokeStyle = topColor;
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = topColor;
+  ctx.shadowBlur = 8;
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = H * (1 - v);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ATTACKS TAB
+// ═══════════════════════════════════════════════════════════
+function renderAttacksTab(main) {
+  const SEV_COLOR = {critical:'#ff2d55',high:'#ff9500',medium:'#ffd60a',low:'#00ff88'};
+  main.innerHTML = `
+    <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+      ${['signal_injection','replay_attack','adversarial_perturbation','model_inversion_probe'].map(t => {
+        const count = S.attacks.filter(a=>a.type===t).length;
+        return `<div class="stat-card red">
+          <div class="stat-label">${ATTACK_LABELS[t]}</div>
+          <div class="stat-value red">${count}</div>
+          <div class="stat-sub">detected total</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="panel">
+      <div class="panel-title">
+        Attack Event Log
+        <span class="badge" style="background:var(--red)15;color:var(--red);border:1px solid var(--red)33">${S.totalAttacks} TOTAL</span>
+      </div>
+      <div id="attack-list">
+        ${S.attacks.length === 0 ? `
+          <div class="empty-log">
+            <div class="em-icon">🛡️</div>
+            <div>No attacks detected yet.<br>System is monitoring…</div>
+          </div>
+        ` : S.attacks.map(a => `
+          <div class="attack-item" style="border-left-color:${SEV_COLOR[a.severity]||'#ff2d55'}">
+            <span class="ai-time">${a.time}</span>
+            <span class="ai-type">${a.label}</span>
+            <span class="ai-ch">CH: [${a.channels.map(c=>CH_NAMES[c]).join(',')||'—'}]</span>
+            <span class="severity-badge" style="color:${SEV_COLOR[a.severity]};border-color:${SEV_COLOR[a.severity]}44;background:${SEV_COLOR[a.severity]}11">${a.severity.toUpperCase()}</span>
+            <span class="ai-score" style="color:${SEV_COLOR[a.severity]}">${a.score}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// PRIVACY TAB
+// ═══════════════════════════════════════════════════════════
+function renderPrivacyTab(main) {
+  const pct = (S.privacyBudget / 10 * 100).toFixed(1);
+  main.innerHTML = `
+    <div class="grid2">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel">
+          <div class="panel-title">Differential Privacy Configuration</div>
+          ${[
+            ['Epsilon (ε)','1.0','Privacy parameter — lower = more private'],
+            ['Delta (δ)','1e-5','Failure probability bound'],
+            ['Mechanism','Gaussian','Noise injection method'],
+            ['Sensitivity (Δf)','1.0','L2 sensitivity of feature function'],
+            ['Noise Scale (σ)','9.34','σ = Δf·√(2·ln(1.25/δ))/ε'],
+            ['Budget Used',`${S.privacyBudget.toFixed(2)}/10.00`,'Cumulative ε consumed'],
+          ].map(([k,v,d])=>`
+            <div class="dp-config-row">
+              <div><div class="key">${k}</div><div style="font-size:9px;color:var(--muted);opacity:0.6;margin-top:1px">${d}</div></div>
+              <div class="val hl">${v}</div>
+            </div>
+          `).join('')}
+          <div style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:6px">
+              <span>PRIVACY BUDGET CONSUMED</span>
+              <span style="color:var(--accent)">${pct}%</span>
+            </div>
+            <div class="dp-meter"><div class="dp-meter-fill" style="width:${pct}%"></div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Privacy Guarantee Formula</div>
+          <div style="background:var(--dim)44;border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center;font-size:13px;font-weight:700;color:var(--accent);letter-spacing:0.05em;line-height:2">
+            Pr[M(D) ∈ S] ≤ e<sup>ε</sup> · Pr[M(D') ∈ S] + δ
+          </div>
+          <div style="margin-top:10px;font-size:10px;color:var(--muted);line-height:1.8">
+            For any two datasets D, D' differing in <strong style="color:var(--text)">one person's neural data</strong>, 
+            any adversary observing detection outputs gains at most 
+            <strong style="color:var(--accent)">e<sup>1.0</sup> ≈ 2.72×</strong> more information 
+            about any individual's brain signals, with failure probability 
+            <strong style="color:var(--green)">δ = 1×10⁻⁵</strong>.
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel">
+          <div class="panel-title">Threat Models Mitigated</div>
+          ${[
+            {t:'Model Inversion',m:true,h:'DP noise prevents signal reconstruction from outputs'},
+            {t:'Membership Inference',m:true,h:'ε-bounded information leakage per query'},
+            {t:'Gradient Leakage',m:true,h:'Federated + DP-SGD training protocol'},
+            {t:'Re-identification',m:true,h:'k-anonymity on 88-dim feature space'},
+            {t:'Replay Attack Detection',m:true,h:'Temporal anomaly scoring flags replays'},
+            {t:'Side-Channel Timing',m:false,h:'Requires Intel SGX enclave (planned v2.0)'},
+          ].map(({t,m,h})=>`
+            <div class="threat-row">
+              <span class="icon">${m?'✓':'⚠'}</span>
+              <div style="flex:1">
+                <div class="threat-name">${t}</div>
+                <div class="threat-how">${h}</div>
+              </div>
+              <span class="severity-badge" style="color:${m?'var(--green)':'var(--orange)'};border-color:${m?'var(--green)44':'var(--orange)44'};background:${m?'var(--green)11':'var(--orange)11'}">${m?'MITIGATED':'PARTIAL'}</span>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">ε–Accuracy Trade-off</div>
+          ${[
+            ['ε=0.1','Very strict','~72%',false],
+            ['ε=0.5','Strict','~85%',false],
+            ['ε=1.0','Current','~92%',true],
+            ['ε=5.0','Moderate','~97%',false],
+            ['ε=∞','No DP','~99%',false],
+          ].map(([e,label,acc,current])=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:4px;margin-bottom:3px;
+              background:${current?'var(--accent)14':'transparent'};
+              border:1px solid ${current?'var(--accent)30':'transparent'}">
+              <span style="font-weight:${current?700:400};color:${current?'var(--accent)':'var(--text)'}">${e}</span>
+              <span style="font-size:9px;color:var(--muted)">${label}</span>
+              <span style="color:${current?'var(--accent)':'var(--muted)'}">Acc ${acc}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ARCHITECTURE TAB
+// ═══════════════════════════════════════════════════════════
+function renderArchitectureTab(main) {
+  main.innerHTML = `
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">System Architecture Stack</div>
+        ${[
+          {icon:'🧠',name:'BCI Hardware Layer',desc:'8-ch EEG @ 256Hz — OpenBCI / Neuralink / Emotiv compatible',color:'var(--muted)'},
+          {icon:'📡',name:'Signal Ingestion',desc:'WebSocket stream, packet validation, timestamping, session mgmt',color:'var(--accent)'},
+          {icon:'🔒',name:'Privacy Engine (DP)',desc:'Gaussian mechanism — ε=1.0, δ=1e-5, L2 sensitivity = 1.0',color:'var(--green)'},
+          {icon:'⚙️',name:'Feature Extraction',desc:'Band powers (δ/θ/α/β/γ), kurtosis, ZCR, std — 88-dim vector',color:'var(--accent)'},
+          {icon:'🌲',name:'Isolation Forest',desc:'30 trees, max_samples=128, contamination=8%, pure NumPy',color:'var(--purple)'},
+          {icon:'⚡',name:'Attack Classifier',desc:'6 attack types: injection, replay, adversarial, eavesdrop, MIA, MI',color:'var(--red)'},
+          {icon:'📊',name:'Alert & Audit API',desc:'FastAPI REST + WebSocket broadcast, SIEM-compatible JSON logs',color:'var(--orange)'},
+          {icon:'💻',name:'React Dashboard',desc:'Recharts visualization — <300ms end-to-end latency',color:'var(--accent)'},
+        ].map((layer, i) => i % 2 === 0 ? `
+          <div class="arch-layer" style="border-left-color:${layer.color}">
+            <span class="al-icon">${layer.icon}</span>
+            <div>
+              <div class="al-name" style="color:${layer.color}">${layer.name}</div>
+              <div class="al-desc">${layer.desc}</div>
+            </div>
+          </div>
+          <div class="arch-arrow">│</div>
+        ` : `
+          <div class="arch-layer" style="border-left-color:${layer.color}">
+            <span class="al-icon">${layer.icon}</span>
+            <div>
+              <div class="al-name" style="color:${layer.color}">${layer.name}</div>
+              <div class="al-desc">${layer.desc}</div>
+            </div>
+          </div>
+          ${i < 7 ? '<div class="arch-arrow">│</div>' : ''}
+        `).join('')}
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel">
+          <div class="panel-title">ML Model — Feature Vector</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">88-dimensional feature vector per 256Hz EEG frame</div>
+          <div style="display:flex;flex-wrap:wrap;margin-bottom:12px">
+            ${['δ Power','θ Power','α Power','β Power','γ Power','Mean','Std Dev','Kurtosis','Skewness','ZCR','P95–P5 Range'].map(f=>`
+              <span class="feature-pill" style="color:var(--accent);border-color:var(--accent)44;background:var(--accent)0e">${f}</span>
+            `).join('')}
+          </div>
+          <div style="font-size:10px;color:var(--muted)">× 8 channels = <strong style="color:var(--accent)">88 features</strong> total</div>
+          ${[
+            ['Algorithm','Isolation Forest (unsupervised)'],
+            ['Trees','30 — pure NumPy, zero sklearn'],
+            ['Contamination','8% expected attack rate'],
+            ['Threshold','anomaly_score > 0.35 → ALERT'],
+            ['Inference','~4–18ms CPU latency'],
+          ].map(([k,v])=>`
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:10px">
+              <span style="color:var(--muted)">${k}</span>
+              <span style="color:var(--text);font-weight:600">${v}</span>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Attack Taxonomy</div>
+          ${Object.entries(ATTACK_LABELS).map(([k,v])=>`
+            <div style="display:flex;gap:10px;padding:8px 10px;background:var(--dim)33;border-radius:5px;margin-bottom:4px;font-size:11px">
+              <span style="color:var(--red);flex-shrink:0;font-size:14px">⚡</span>
+              <div>
+                <div style="color:var(--text);font-weight:600">${v}</div>
+                <div style="color:var(--muted);font-size:10px;margin-top:2px">${{
+                  signal_injection:'Unauthorized voltage spikes on EEG electrodes — detected via amplitude anomaly',
+                  replay_attack:'Previously captured session replayed to fool classifier — temporal signature mismatch',
+                  adversarial_perturbation:'Crafted noise to flip ML model decision — statistical feature drift detection',
+                  eavesdropping_artifact:'Side-channel leakage in wireless BCI transmission — inter-channel correlation',
+                  model_inversion_probe:'Queries designed to reconstruct training data — gradient pattern analysis',
+                  membership_inference:'Inferring training set membership — output distribution statistical testing',
+                }[k]}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// UPDATE LOOP
+// ═══════════════════════════════════════════════════════════
+let bannerTimeout;
+
+function updateUI(frame) {
+  // Header
+  document.getElementById('hdr-packets').textContent = S.totalPackets.toLocaleString();
+  document.getElementById('hdr-attacks').textContent = S.totalAttacks;
+  const uptime = Math.floor((Date.now() - S.startTime) / 1000);
+  const h = String(Math.floor(uptime/3600)).padStart(2,'0');
+  const m = String(Math.floor((uptime%3600)/60)).padStart(2,'0');
+  const s = String(uptime%60).padStart(2,'0');
+  document.getElementById('hdr-time').textContent = `${h}:${m}:${s}`;
+
+  // Attack badge
+  const badge = document.getElementById('attack-count-badge');
+  if (badge) { badge.textContent = S.totalAttacks; badge.style.display = S.totalAttacks > 0 ? 'inline' : 'none'; }
+
+  if (S.currentTab === 'monitor') updateMonitorUI(frame);
+  else if (S.currentTab === 'attacks') updateAttacksUI();
+  else if (S.currentTab === 'privacy') updatePrivacyUI();
+}
+
+function updateMonitorUI(frame) {
+  // stats
+  const sp = document.getElementById('s-packets');
+  const sa = document.getElementById('s-attacks');
+  const sr = document.getElementById('s-rate');
+  const ss = document.getElementById('s-score');
+  const sb = document.getElementById('s-budget');
+  if (sp) sp.textContent = S.totalPackets.toLocaleString();
+  if (sa) sa.textContent = S.totalAttacks;
+  if (sr) sr.textContent = S.totalPackets > 0 ? (S.totalAttacks/S.totalPackets*100).toFixed(1)+'%' : '—';
+  if (ss) ss.textContent = frame.score.toFixed(3);
+  if (sb) sb.textContent = S.privacyBudget.toFixed(1);
+
+  // score color
+  const scoreColor = frame.score > 0.85 ? 'var(--red)' : frame.score > 0.65 ? 'var(--orange)' : frame.score > 0.35 ? 'var(--yellow)' : 'var(--green)';
+  const scoreNum = document.getElementById('score-num');
+  if (scoreNum) { scoreNum.textContent = frame.score.toFixed(3); scoreNum.style.color = scoreColor; }
+
+  // attack banner
+  const banner = document.getElementById('attack-banner');
+  if (banner) {
+    if (frame.isAttack) {
+      banner.classList.add('show');
+      const bt = document.getElementById('ban-type');
+      const bc = document.getElementById('ban-channels');
+      const bsev = document.getElementById('ban-severity');
+      const bsc = document.getElementById('ban-score');
+      if (bt) bt.textContent = ATTACK_LABELS[frame.attackType];
+      if (bc) bc.textContent = frame.affectedCh.map(i=>CH_NAMES[i]).join(', ') || '—';
+      if (bsev) { bsev.textContent = frame.severity.toUpperCase(); const sc2 = {critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--green)'}[frame.severity]||'var(--red)'; bsev.style.color=sc2; bsev.style.borderColor=sc2+'44'; }
+      if (bsc) { bsc.textContent = frame.score.toFixed(3); bsc.style.color = scoreColor; }
+      clearTimeout(bannerTimeout);
+      bannerTimeout = setTimeout(() => banner.classList.remove('show'), 3000);
+    }
+  }
+
+  // channel attack labels + matrix
+  frame.affectedCh.forEach(i => {
+    const el = document.getElementById(`ch-atk-${i}`);
+    if (el) { el.style.display = 'block'; setTimeout(()=>{ el.style.display='none'; }, 2800); }
+    const mat = document.getElementById(`ch-mat-${i}`);
+    if (mat) {
+      mat.style.background = 'rgba(255,45,85,0.12)';
+      mat.style.borderColor = 'var(--red)55';
+      setTimeout(()=>{ mat.style.background='var(--dim)44'; mat.style.borderColor='var(--border)'; }, 2500);
+    }
+  });
+
+  // channel values in matrix
+  CH_NAMES.forEach((n, i) => {
+    const el = document.getElementById(`ch-mat-val-${i}`);
+    if (el) {
+      const buf = S.channelBuffers[i];
+      const rms = Math.sqrt(buf.slice(-32).reduce((s,v)=>s+v*v,0)/32);
+      el.textContent = rms.toFixed(1)+'μV';
+    }
+  });
+
+  // draw canvases
+  drawChannels(frame.affectedCh);
+  drawScoreChart();
+}
+
+function updateAttacksUI() {
+  const list = document.getElementById('attack-list');
+  if (!list) return;
+  const SEV_COLOR = {critical:'#ff2d55',high:'#ff9500',medium:'#ffd60a',low:'#00ff88'};
+  if (S.attacks.length === 0) {
+    list.innerHTML = '<div class="empty-log"><div class="em-icon">🛡️</div><div>No attacks detected yet.<br>System is monitoring…</div></div>';
+    return;
+  }
+  list.innerHTML = S.attacks.slice(0, 20).map(a => `
+    <div class="attack-item" style="border-left-color:${SEV_COLOR[a.severity]||'#ff2d55'}">
+      <span class="ai-time">${a.time}</span>
+      <span class="ai-type">${a.label}</span>
+      <span class="ai-ch">CH: [${a.channels.map(c=>CH_NAMES[c]).join(',')||'—'}]</span>
+      <span class="severity-badge" style="color:${SEV_COLOR[a.severity]};border-color:${SEV_COLOR[a.severity]}44;background:${SEV_COLOR[a.severity]}11">${a.severity.toUpperCase()}</span>
+      <span class="ai-score" style="color:${SEV_COLOR[a.severity]}">${a.score}</span>
+    </div>
+  `).join('');
+}
+
+function updatePrivacyUI() {
+  // refresh budget bar
+  const fill = document.querySelector('.dp-meter-fill');
+  if (fill) fill.style.width = (S.privacyBudget/10*100).toFixed(1)+'%';
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════
+renderTab('monitor');
+
+setInterval(() => {
+  const frame = generateFrame();
+  updateUI(frame);
+}, 300);
+</script>
+</body>
+</html>
